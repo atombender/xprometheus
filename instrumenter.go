@@ -17,7 +17,7 @@ import (
 	"golang.org/x/net/context"
 )
 
-var instLabels = []string{"method", "code", "path"}
+var instLabels = []string{"method", "code", "route"}
 
 type nower interface {
 	Now() time.Time
