@@ -15,6 +15,9 @@ type Mux struct {
 }
 
 func WrapMux(mux *xmux.Mux, opts prom.SummaryOpts) *Mux {
+	if opts.Subsystem == "" {
+		opts.Subsystem = "http"
+	}
 	return &Mux{mux, opts}
 }
 
