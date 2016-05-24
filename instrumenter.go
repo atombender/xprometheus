@@ -17,8 +17,6 @@ import (
 	"golang.org/x/net/context"
 )
 
-var instLabels = []string{"method", "code", "route"}
-
 type nower interface {
 	Now() time.Time
 }
@@ -50,25 +48,25 @@ func InstrumentingHandlerWithOpts(route string, opts prom.SummaryOpts, next xhan
 			Help:        "Total number of HTTP requests made.",
 			ConstLabels: opts.ConstLabels,
 		},
-		instLabels,
+		[]string{"method", "code", "route"},
 	)
 
 	opts.Name = "request_duration_microseconds"
 	opts.Help = "The HTTP request latencies in microseconds."
-	reqDur := prom.NewSummary(opts)
+	reqDur := prom.NewSummaryVec(opts, []string{"route"})
 
 	opts.Name = "request_size_bytes"
 	opts.Help = "The HTTP request sizes in bytes."
-	reqSz := prom.NewSummary(opts)
+	reqSz := prom.NewSummaryVec(opts, []string{"route"})
 
 	opts.Name = "response_size_bytes"
 	opts.Help = "The HTTP response sizes in bytes."
-	resSz := prom.NewSummary(opts)
+	resSz := prom.NewSummaryVec(opts, []string{"route"})
 
 	regReqCnt := prom.MustRegisterOrGet(reqCnt).(*prom.CounterVec)
-	regReqDur := prom.MustRegisterOrGet(reqDur).(prom.Summary)
-	regReqSz := prom.MustRegisterOrGet(reqSz).(prom.Summary)
-	regResSz := prom.MustRegisterOrGet(resSz).(prom.Summary)
+	regReqDur := prom.MustRegisterOrGet(reqDur).(*prom.SummaryVec)
+	regReqSz := prom.MustRegisterOrGet(reqSz).(*prom.SummaryVec)
+	regResSz := prom.MustRegisterOrGet(resSz).(*prom.SummaryVec)
 
 	return xhandler.HandlerFuncC(func(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 		now := time.Now()
@@ -99,9 +97,9 @@ func InstrumentingHandlerWithOpts(route string, opts prom.SummaryOpts, next xhan
 		method := sanitizeMethod(r.Method)
 		code := sanitizeCode(delegate.status)
 		regReqCnt.WithLabelValues(method, code, route).Inc()
-		regReqDur.Observe(elapsed)
-		regResSz.Observe(float64(delegate.written))
-		regReqSz.Observe(float64(<-out))
+		regReqDur.WithLabelValues(route).Observe(elapsed)
+		regResSz.WithLabelValues(route).Observe(float64(delegate.written))
+		regReqSz.WithLabelValues(route).Observe(float64(<-out))
 	})
 }
 
