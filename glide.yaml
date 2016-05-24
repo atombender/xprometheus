@@ -1,0 +1,10 @@
+package: .
+import:
+- package: github.com/prometheus/client_golang
+  subpackages:
+  - prometheus
+- package: github.com/rs/xhandler
+- package: github.com/rs/xmux
+- package: golang.org/x/net
+  subpackages:
+  - context
