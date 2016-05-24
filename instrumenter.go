@@ -17,7 +17,7 @@ import (
 	"golang.org/x/net/context"
 )
 
-var instLabels = []string{"method", "code"}
+var instLabels = []string{"method", "code", "path"}
 
 type nower interface {
 	Now() time.Time
@@ -33,15 +33,15 @@ var now nower = nowFunc(func() time.Time {
 	return time.Now()
 })
 
-func InstrumentingHandler(next xhandler.HandlerC) xhandler.HandlerC {
-	return InstrumentingHandlerWithOpts(
+func InstrumentingHandler(route string, next xhandler.HandlerC) xhandler.HandlerC {
+	return InstrumentingHandlerWithOpts(route,
 		prom.SummaryOpts{
 			Subsystem:   "http",
 			ConstLabels: prom.Labels{},
 		}, next)
 }
 
-func InstrumentingHandlerWithOpts(opts prom.SummaryOpts, next xhandler.HandlerC) xhandler.HandlerC {
+func InstrumentingHandlerWithOpts(route string, opts prom.SummaryOpts, next xhandler.HandlerC) xhandler.HandlerC {
 	reqCnt := prom.NewCounterVec(
 		prom.CounterOpts{
 			Namespace:   opts.Namespace,
@@ -98,7 +98,7 @@ func InstrumentingHandlerWithOpts(opts prom.SummaryOpts, next xhandler.HandlerC)
 
 		method := sanitizeMethod(r.Method)
 		code := sanitizeCode(delegate.status)
-		regReqCnt.WithLabelValues(method, code).Inc()
+		regReqCnt.WithLabelValues(method, code, route).Inc()
 		regReqDur.Observe(elapsed)
 		regResSz.Observe(float64(delegate.written))
 		regReqSz.Observe(float64(<-out))

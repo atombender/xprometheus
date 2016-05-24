@@ -78,15 +78,5 @@ func (m *Mux) ServeHTTPC(ctx context.Context, w http.ResponseWriter, r *http.Req
 }
 
 func (m *Mux) wrap(path string, handler xhandler.HandlerC) xhandler.HandlerC {
-	labels := prom.Labels{}
-	if m.opts.ConstLabels != nil {
-		for k, v := range m.opts.ConstLabels {
-			labels[k] = v
-		}
-	}
-	labels["path"] = path
-
-	opts := m.opts
-	opts.ConstLabels = labels
-	return InstrumentingHandlerWithOpts(opts, handler)
+	return InstrumentingHandlerWithOpts(path, m.opts, handler)
 }
