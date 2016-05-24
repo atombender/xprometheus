@@ -12,6 +12,8 @@ import "github.com/atombender/xprometheus"
 
 `xprometheus.WrapMux()` returns a new struct that has nearly exactly the same interface as `xmux.Mux`. Every handler will be instrumented with Prometheus.
 
+Note that to avoid clashing with Prometheus' own metrics handler, you must use a different namespace, as in the example below.
+
 ```go
 import (
   "github.com/prometheus/client_golang/prometheus"
@@ -26,7 +28,10 @@ func thingHandler(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 
 func main() {
   mux = mux.New()
-  mux.Handle("GET", "/metrics", prometheus.Handler())
+  mux.Handle("GET", "/metrics", prometheus.InstrumentHandlerWithOpts(prometheus.SummaryOpts{
+		Namespace: "prometheus",
+    Subsystem: "http",
+	}, prometheus.UninstrumentedHandler()))
 
   pmux := xprometheus.WrapMux(mux.New(), prometheus.SummaryOpts{
   	Namespace: "thingapp",
