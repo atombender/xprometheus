@@ -14,7 +14,23 @@ type Mux struct {
 	opts prom.SummaryOpts
 }
 
-func WrapMux(mux *xmux.Mux, opts prom.SummaryOpts) *Mux {
+// NewMux creates a new mux. It's like xmux.Mux, but automatically adds
+// instrumentation to every registered route.
+func NewMux() *Mux {
+	return NewMuxWithOpts(prom.SummaryOpts{
+		Subsystem: "http",
+	})
+}
+
+// NewMuxWithOpts creates a new mux. It's like xmux.Mux, but automatically adds
+// instrumentation to every registered route.
+func NewMuxWithOpts(opts prom.SummaryOpts) *Mux {
+	return Wrap(xmux.New(), opts)
+}
+
+// Wrap turns an xmux.Mux into an instrumented mux. It's like xmux.Mux, but
+// automatically adds instrumentation to every registered route.
+func Wrap(mux *xmux.Mux, opts prom.SummaryOpts) *Mux {
 	if opts.Subsystem == "" {
 		opts.Subsystem = "http"
 	}
@@ -78,5 +94,7 @@ func (m *Mux) ServeHTTPC(ctx context.Context, w http.ResponseWriter, r *http.Req
 }
 
 func (m *Mux) wrap(path string, handler xhandler.HandlerC) xhandler.HandlerC {
-	return InstrumentingHandlerWithOpts(path, m.opts, handler)
+	chain := xhandler.Chain{}
+	chain.UseC(InstrumentingHandlerWithOpts(path, m.opts))
+	return chain.HandlerC(handler)
 }

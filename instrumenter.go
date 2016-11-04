@@ -31,76 +31,90 @@ var now nower = nowFunc(func() time.Time {
 	return time.Now()
 })
 
-func InstrumentingHandler(route string, next xhandler.HandlerC) xhandler.HandlerC {
+// InstrumentingHandler returns an instrumenting handler with default
+// options. The route can be empty, in which case the request URL path
+// is used as the route label.
+func InstrumentingHandler(route string) func(next xhandler.HandlerC) xhandler.HandlerC {
 	return InstrumentingHandlerWithOpts(route,
 		prom.SummaryOpts{
 			Subsystem:   "http",
 			ConstLabels: prom.Labels{},
-		}, next)
+		})
 }
 
-func InstrumentingHandlerWithOpts(route string, opts prom.SummaryOpts, next xhandler.HandlerC) xhandler.HandlerC {
-	reqCnt := prom.NewCounterVec(
-		prom.CounterOpts{
-			Namespace:   opts.Namespace,
-			Subsystem:   opts.Subsystem,
-			Name:        "requests_total",
-			Help:        "Total number of HTTP requests made.",
-			ConstLabels: opts.ConstLabels,
-		},
-		[]string{"method", "code", "route"},
-	)
+// InstrumentingHandlerWithOpts returns an instrumenting handler with
+// custom summary options. The route can be empty, in which case the
+// request URL path is used as the route label.
+func InstrumentingHandlerWithOpts(
+	route string,
+	opts prom.SummaryOpts) func(next xhandler.HandlerC) xhandler.HandlerC {
+	return func(next xhandler.HandlerC) xhandler.HandlerC {
+		reqCnt := prom.NewCounterVec(
+			prom.CounterOpts{
+				Namespace:   opts.Namespace,
+				Subsystem:   opts.Subsystem,
+				Name:        "requests_total",
+				Help:        "Total number of HTTP requests made.",
+				ConstLabels: opts.ConstLabels,
+			},
+			[]string{"method", "code", "route"},
+		)
 
-	opts.Name = "request_duration_microseconds"
-	opts.Help = "The HTTP request latencies in microseconds."
-	reqDur := prom.NewSummaryVec(opts, []string{"route"})
+		opts.Name = "request_duration_microseconds"
+		opts.Help = "The HTTP request latencies in microseconds."
+		reqDur := prom.NewSummaryVec(opts, []string{"route"})
 
-	opts.Name = "request_size_bytes"
-	opts.Help = "The HTTP request sizes in bytes."
-	reqSz := prom.NewSummaryVec(opts, []string{"route"})
+		opts.Name = "request_size_bytes"
+		opts.Help = "The HTTP request sizes in bytes."
+		reqSz := prom.NewSummaryVec(opts, []string{"route"})
 
-	opts.Name = "response_size_bytes"
-	opts.Help = "The HTTP response sizes in bytes."
-	resSz := prom.NewSummaryVec(opts, []string{"route"})
+		opts.Name = "response_size_bytes"
+		opts.Help = "The HTTP response sizes in bytes."
+		resSz := prom.NewSummaryVec(opts, []string{"route"})
 
-	regReqCnt := prom.MustRegisterOrGet(reqCnt).(*prom.CounterVec)
-	regReqDur := prom.MustRegisterOrGet(reqDur).(*prom.SummaryVec)
-	regReqSz := prom.MustRegisterOrGet(reqSz).(*prom.SummaryVec)
-	regResSz := prom.MustRegisterOrGet(resSz).(*prom.SummaryVec)
+		regReqCnt := prom.MustRegisterOrGet(reqCnt).(*prom.CounterVec)
+		regReqDur := prom.MustRegisterOrGet(reqDur).(*prom.SummaryVec)
+		regReqSz := prom.MustRegisterOrGet(reqSz).(*prom.SummaryVec)
+		regResSz := prom.MustRegisterOrGet(resSz).(*prom.SummaryVec)
 
-	return xhandler.HandlerFuncC(func(ctx context.Context, w http.ResponseWriter, r *http.Request) {
-		now := time.Now()
+		return xhandler.HandlerFuncC(func(ctx context.Context, w http.ResponseWriter, r *http.Request) {
+			now := time.Now()
 
-		delegate := &responseWriterDelegator{ResponseWriter: w}
-		out := make(chan int)
-		urlLen := 0
-		if r.URL != nil {
-			urlLen = len(r.URL.String())
-		}
-		go computeApproximateRequestSize(r, out, urlLen)
+			delegate := &responseWriterDelegator{ResponseWriter: w}
+			out := make(chan int)
+			urlLen := 0
+			if r.URL != nil {
+				urlLen = len(r.URL.String())
+			}
+			go computeApproximateRequestSize(r, out, urlLen)
 
-		_, cn := w.(http.CloseNotifier)
-		_, fl := w.(http.Flusher)
-		_, hj := w.(http.Hijacker)
-		_, rf := w.(io.ReaderFrom)
-		var newW http.ResponseWriter
-		if cn && fl && hj && rf {
-			newW = &fancyResponseWriterDelegator{delegate}
-		} else {
-			newW = delegate
-		}
+			_, cn := w.(http.CloseNotifier)
+			_, fl := w.(http.Flusher)
+			_, hj := w.(http.Hijacker)
+			_, rf := w.(io.ReaderFrom)
+			var newW http.ResponseWriter
+			if cn && fl && hj && rf {
+				newW = &fancyResponseWriterDelegator{delegate}
+			} else {
+				newW = delegate
+			}
 
-		next.ServeHTTPC(ctx, newW, r)
+			next.ServeHTTPC(ctx, newW, r)
 
-		elapsed := float64(time.Since(now)) / float64(time.Microsecond)
+			elapsed := float64(time.Since(now)) / float64(time.Microsecond)
 
-		method := sanitizeMethod(r.Method)
-		code := sanitizeCode(delegate.status)
-		regReqCnt.WithLabelValues(method, code, route).Inc()
-		regReqDur.WithLabelValues(route).Observe(elapsed)
-		regResSz.WithLabelValues(route).Observe(float64(delegate.written))
-		regReqSz.WithLabelValues(route).Observe(float64(<-out))
-	})
+			method := sanitizeMethod(r.Method)
+			code := sanitizeCode(delegate.status)
+			routeLabel := route
+			if routeLabel == "" {
+				routeLabel = r.URL.Path
+			}
+			regReqCnt.WithLabelValues(method, code, routeLabel).Inc()
+			regReqDur.WithLabelValues(routeLabel).Observe(elapsed)
+			regResSz.WithLabelValues(routeLabel).Observe(float64(delegate.written))
+			regReqSz.WithLabelValues(routeLabel).Observe(float64(<-out))
+		})
+	}
 }
 
 func computeApproximateRequestSize(r *http.Request, out chan int, s int) {
