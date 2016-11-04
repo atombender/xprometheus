@@ -93,6 +93,10 @@ func (m *Mux) ServeHTTPC(ctx context.Context, w http.ResponseWriter, r *http.Req
 	m.mux.ServeHTTPC(ctx, w, r)
 }
 
+func (m *Mux) Lookup(method, path string) (xhandler.HandlerC, xmux.ParamHolder, bool) {
+	return m.mux.Lookup(method, path)
+}
+
 func (m *Mux) wrap(path string, handler xhandler.HandlerC) xhandler.HandlerC {
 	chain := xhandler.Chain{}
 	chain.UseC(InstrumentingHandlerWithOpts(path, m.opts))
