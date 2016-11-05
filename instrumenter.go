@@ -145,6 +145,12 @@ type responseWriterDelegator struct {
 	wroteHeader     bool
 }
 
+func (r *responseWriterDelegator) Flush() {
+	if f, ok := r.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
 func (r *responseWriterDelegator) WriteHeader(code int) {
 	r.status = code
 	r.wroteHeader = true
