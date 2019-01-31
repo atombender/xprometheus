@@ -75,3 +75,7 @@ func main() {
   log.Fatal(http.ListenAndServe("locahost:8080", chain.Handler(mux))
 }
 ```
+
+## License
+
+MIT. See `LICENSE` file.
